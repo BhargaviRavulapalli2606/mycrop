@@ -1,0 +1,1 @@
+the crop and fertilizers recommendation system for telangana is used to recommend the crop and fertilizer dosage for the farmer , that is most helpfuul to increase the productivity, the soil nutrients information is collected and framed the dataset to locate the best crop for the locality.
