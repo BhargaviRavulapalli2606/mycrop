@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🌾 Smart Crop & Fertilizer Recommendation</title>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;700&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    body { font-family: 'Poppins', sans-serif; background: linear-gradient(-45deg,#1e3c72,#2a5298,#1cb5e0,#000046); background-size:400% 400%; animation: gradientShift 10s ease infinite; color:white; }
+    @keyframes gradientShift { 0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%} }
+    .glass { background: rgba(255,255,255,0.12); backdrop-filter: blur(8px); border-radius:14px; border: 1px solid rgba(255,255,255,0.08); padding:1rem; }
+    .nutrient-card { background: rgba(255,255,255,0.06); border-radius:10px; padding:10px; text-align:center; }
+    .loader { border: 4px solid rgba(255,255,255,0.25); border-top: 4px solid #00ffcc; border-radius: 50%; width: 32px; height: 32px; animation: spin 1s linear infinite; margin:auto; display:block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="min-h-screen flex items-start justify-center py-10 px-4">
+
+  <div class="w-full max-w-4xl">
+    <div class="text-center mb-6">
+      <h1 class="text-3xl font-bold text-green-300">🌾 Smart Crop Recommendation</h1>
+      <p class="text-gray-200 mt-1 text-sm">Temperature (API or manual) · Soil moisture · Nutrients graph</p>
+    </div>
+
+    <div class="glass mb-6">
+      <form id="cropForm" class="grid md:grid-cols-2 gap-4">
+        <div>
+          <label class="text-sm block mb-1">District</label>
+          <select name="district" id="district" class="w-full p-2 rounded text-black" required>
+            <option value="">Select District</option>
+            {% for d in districts %}
+              <option value="{{ d }}">{{ d }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label class="text-sm block mb-1">Block</label>
+          <select name="block" id="block" class="w-full p-2 rounded text-black" required>
+            <option value="">Select Block</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="text-sm block mb-1">Crop You Grow</label>
+          <select name="crop" id="crop" class="w-full p-2 rounded text-black" required>
+            <option value="">Select Crop</option>
+            {% for c in crops %}
+              <option value="{{ c }}">{{ c }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label class="text-sm block mb-1">Area (acres)</label>
+          <input type="number" name="area" id="area" step="0.1" min="0.1" value="1" class="w-full p-2 rounded text-black" required>
+        </div>
+
+        <!-- Manual Temperature -->
+        <div>
+          <label class="text-sm block mb-1">Temperature (°C) — Auto or enter manually</label>
+          <input type="number" step="0.1" name="temperature" id="temp_input" placeholder="Auto / Enter manually" class="w-full p-2 rounded text-black" />
+        </div>
+
+        <!-- Soil moisture -->
+        <div>
+          <label class="text-sm block mb-1">Soil Moisture (%)</label>
+          <input type="number" step="0.1" name="moisture" id="moisture_input" placeholder="Enter soil moisture" class="w-full p-2 rounded text-black" />
+        </div>
+
+        <!-- nutrient preview area toggled via JS -->
+        <div id="nutrients-section" class="md:col-span-2 hidden">
+          <h3 class="text-yellow-300 font-semibold mb-2">🧪 Soil Nutrients</h3>
+          <div id="nutrients-display" class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm"></div>
+        </div>
+
+        <!-- nutrient graph image -->
+        <div id="graph-section" class="md:col-span-2 hidden">
+          <h3 class="text-blue-300 font-semibold mb-2">📊 Nutrients Graph</h3>
+          <img id="nutrient-graph" src="" alt="nutrients graph" class="w-full rounded" />
+        </div>
+
+        <div class="md:col-span-2 text-center mt-2">
+          <button type="submit" class="bg-green-400 hover:bg-green-500 text-black font-semibold py-2 px-6 rounded">Get Recommendation</button>
+        </div>
+      </form>
+
+      <div id="loader" class="hidden mt-4 text-center">
+        <div class="loader"></div>
+      </div>
+    </div>
+
+    <div id="result" class="glass hidden p-4 mb-6"></div>
+
+    <footer class="text-center text-xs text-gray-300">
+      Powered by <span class="text-green-300 font-semibold">Flask · OpenWeather · (WeatherAPI optional) · ML</span>
+    </footer>
+  </div>
+
+<script>
+  const blocksByDistrict = {{ blocks_by_district | tojson }};
+  const districtSelect = document.getElementById('district');
+  const blockSelect = document.getElementById('block');
+  const nutrientsSection = document.getElementById('nutrients-section');
+  const nutrientsDisplay = document.getElementById('nutrients-display');
+  const graphSection = document.getElementById('graph-section');
+  const nutrientGraph = document.getElementById('nutrient-graph');
+  const loader = document.getElementById('loader');
+  const result = document.getElementById('result');
+  const tempInput = document.getElementById('temp_input');
+  const moistureInput = document.getElementById('moisture_input');
+
+  // Populate blocks when district changes
+  districtSelect.addEventListener('change', () => {
+    const selected = districtSelect.value;
+    blockSelect.innerHTML = '<option value="">Select Block</option>';
+    nutrientsSection.classList.add('hidden');
+    graphSection.classList.add('hidden');
+    if (selected && blocksByDistrict[selected]) {
+      blocksByDistrict[selected].forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b; opt.textContent = b;
+        blockSelect.appendChild(opt);
+      });
+    }
+  });
+
+  // On block change: fetch nutrients & graph preview
+  blockSelect.addEventListener('change', async () => {
+    const district = districtSelect.value;
+    const block = blockSelect.value;
+    nutrientsSection.classList.add('hidden');
+    graphSection.classList.add('hidden');
+
+    if (!district || !block) return;
+    try {
+      const resp = await fetch(`/get_nutrients?district=${encodeURIComponent(district)}&block=${encodeURIComponent(block)}`);
+      const data = await resp.json();
+      if (data && data.nutrients) {
+        // show nutrient cards
+        nutrientsDisplay.innerHTML = Object.entries(data.nutrients).map(([k, v]) => `
+          <div class="nutrient-card">
+            <p class="font-semibold text-green-300">${k}</p>
+            <p>${v}</p>
+          </div>
+        `).join('');
+        nutrientsSection.classList.remove('hidden');
+      } else {
+        nutrientsSection.classList.add('hidden');
+      }
+
+      // set graph img src (it will be generated by backend)
+      nutrientGraph.src = `/nutrients_graph?district=${encodeURIComponent(district)}&block=${encodeURIComponent(block)}&t=${Date.now()}`;
+      nutrientGraph.onload = () => { graphSection.classList.remove('hidden'); }
+      nutrientGraph.onerror = () => { graphSection.classList.add('hidden'); }
+    } catch (err) {
+      console.error("Error fetching nutrients:", err);
+      nutrientsSection.classList.add('hidden');
+      graphSection.classList.add('hidden');
+    }
+  });
+
+  // Form submit -> recommendation
+  document.getElementById('cropForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    result.classList.add('hidden');
+    loader.classList.remove('hidden');
+
+    const form = new FormData(e.target);
+    const resp = await fetch('/get_recommendation', { method: 'POST', body: form });
+    const data = await resp.json();
+
+    loader.classList.add('hidden');
+    displayResult(data);
+    // auto-fill temp input with API temp if returned
+    if (data.temperature !== null && data.temperature !== undefined) {
+      tempInput.value = Number(data.temperature).toFixed(1);
+    }
+    // show soil moisture returned
+    if (data.soil_moisture !== null && data.soil_moisture !== undefined) {
+      moistureInput.value = data.soil_moisture;
+    }
+  });
+
+  function displayResult(data) {
+    result.innerHTML = `
+      <h2 class="text-xl font-semibold text-green-300 mb-2">🌱 Recommendation Summary</h2>
+      <div class="grid md:grid-cols-2 gap-3 text-sm">
+        <div>
+          <p><strong>District:</strong> ${data.district || '-'}</p>
+          <p><strong>Block:</strong> ${data.block || '-'}</p>
+          <p><strong>Temperature:</strong> ${data.temperature !== null && data.temperature !== undefined ? (Number(data.temperature).toFixed(1) + " °C") : "N/A (enter manually)"}</p>
+          <p><strong>Soil Moisture:</strong> ${data.soil_moisture !== null && data.soil_moisture !== undefined ? data.soil_moisture + " %" : "N/A"}</p>
+        </div>
+        <div>
+          <p><strong>Farmer Crop:</strong> ${data.farmer_crop || "-"}</p>
+          <p><strong>Recommended Crop:</strong> <span class="text-green-300">${data.recommended_crop}</span></p>
+          <p><strong>Condition:</strong> <span class="${data.condition === 'Normal' ? 'text-green-400' : data.condition === 'Dangerous' ? 'text-red-400' : 'text-yellow-300'}">${data.condition}</span></p>
+        </div>
+      </div>
+
+      <hr class="my-3 border-gray-500">
+
+      <h3 class="text-sm font-semibold text-blue-300 mb-2">🌾 Fertilizer Recommendation</h3>
+      <ul class="list-disc ml-6 text-sm">
+        <li><b>Urea:</b> ${data.fertilizer_kg ? data.fertilizer_kg.urea_kg : (data.fertilizer_products_kg ? data.fertilizer_products_kg.urea_kg : 'N/A')} kg</li>
+        <li><b>SSP:</b> ${data.fertilizer_kg ? data.fertilizer_kg.ssp_kg : (data.fertilizer_products_kg ? data.fertilizer_products_kg.ssp_kg : 'N/A')} kg</li>
+        <li><b>MOP:</b> ${data.fertilizer_kg ? data.fertilizer_kg.mop_kg : (data.fertilizer_products_kg ? data.fertilizer_products_kg.mop_kg : 'N/A')} kg</li>
+      </ul>
+    `;
+
+    result.classList.remove('hidden');
+    // also refresh nutrient graph if district+block present
+    if (data.district && data.block) {
+      nutrientGraph.src = `/nutrients_graph?district=${encodeURIComponent(data.district)}&block=${encodeURIComponent(data.block)}&t=${Date.now()}`;
+      graphSection.classList.remove('hidden');
+    }
+  }
+</script>
+</body>
+</html>
